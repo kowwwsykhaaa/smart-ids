@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart IDS — Intrusion Detection System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b0f; font-family: 'Share Tech Mono', monospace; color: #c9d8e8; overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #070b0f; }
+    ::-webkit-scrollbar-thumb { background: #1a2535; border-radius: 2px; }
+
+    .ids-tooltip { background:#0c1219!important;border:1px solid #1a2535!important;color:#c9d8e8!important;font-family:'Share Tech Mono',monospace!important;font-size:10px!important;border-radius:6px!important; }
+    .ids-tooltip::before { display:none!important; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.4} }
+    @keyframes blink  { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    #header {
+      background: #090e15; border-bottom: 1px solid #1a2535;
+      padding: 12px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 20px #000a;
+    }
+    .logo-box { width:38px;height:38px;border-radius:8px;background:#0d1f12;border:1.5px solid #00ff88;display:flex;align-items:center;justify-content:center;font-size:18px; }
+    .logo-title { font-family:'Orbitron',sans-serif;font-size:15px;font-weight:900;color:#00ff88;letter-spacing:3px; }
+    .logo-sub   { font-size:9px;color:#4a6070;letter-spacing:2px;margin-top:2px; }
+    #status-dot { width:7px;height:7px;border-radius:50%;background:#00ff88;animation:pulse 1s infinite;display:inline-block; }
+    #toggle-btn { background:#1a0a0a;border:1px solid #ff3b3b;color:#ff3b3b;border-radius:5px;padding:5px 14px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;letter-spacing:1px; }
+    #toggle-btn.paused { background:#0a1a0a;border-color:#00ff88;color:#00ff88; }
+
+    #main { padding:18px 22px;display:flex;flex-direction:column;gap:16px; }
+
+    #stats { display:flex;gap:12px;flex-wrap:wrap; }
+    .stat-card { background:#0c1219;border-radius:8px;padding:16px 20px;flex:1;min-width:130px;position:relative;overflow:hidden; }
+    .stat-label { font-size:10px;color:#4a6070;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px; }
+    .stat-value { font-size:30px;font-weight:700;display:flex;align-items:center;gap:8px; }
+    .stat-sub   { font-size:10px;color:#4a6070;margin-top:4px; }
+    .pulse-dot  { width:8px;height:8px;border-radius:50%;display:inline-block;animation:pulse 1.2s ease-in-out infinite; }
+
+    .grid-2  { display:grid;grid-template-columns:1.1fr 1fr;gap:14px; }
+    .grid-2b { display:grid;grid-template-columns:1.6fr 1fr;gap:14px; }
+
+    .panel { background:#0c1219;border:1px solid #1a2535;border-radius:10px;padding:14px; }
+    .panel-title { font-size:10px;letter-spacing:2px;color:#4a6070;text-transform:uppercase;margin-bottom:10px; }
+
+    #feed-wrap { overflow-y:auto;max-height:300px;font-size:11px; }
+    .feed-header { display:grid;grid-template-columns:78px 130px 1fr 90px 70px 80px;gap:6px;padding:4px 12px;color:#4a6070;font-size:9px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #1a2535;margin-bottom:4px; }
+    .feed-row { display:grid;grid-template-columns:78px 130px 1fr 90px 70px 80px;gap:6px;align-items:center;padding:7px 12px;border-bottom:1px solid #1a2535; }
+    .feed-row.new { animation:fadeIn .3s ease; }
+    .feed-row.alt { background:#0a1018; }
+
+    .badge { border-radius:4px;padding:2px 8px;font-size:10px;letter-spacing:1px;white-space:nowrap;border:1px solid; }
+    .score-wrap { display:flex;align-items:center;gap:6px; }
+    .score-track { width:60px;height:4px;background:#1a2535;border-radius:2px;overflow:hidden; }
+    .score-fill  { height:100%;border-radius:2px; }
+
+    .filters { display:flex;gap:5px; }
+    .filter-btn { background:transparent;border:1px solid #1a2535;color:#4a6070;border-radius:4px;padding:2px 7px;font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:1px; }
+
+    .blocked-header { display:grid;grid-template-columns:130px 1fr 90px 80px;gap:8px;padding:5px 12px;color:#4a6070;font-size:9px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #1a2535; }
+    .blocked-row { display:grid;grid-template-columns:130px 1fr 90px 80px;gap:8px;padding:7px 12px;border-bottom:1px solid #1a2535;font-size:11px; }
+    .blocked-row.alt { background:#0a1018; }
+
+    .sev-row { display:flex;align-items:center;justify-content:space-between;margin-bottom:7px; }
+    .sev-track { width:80px;height:3px;background:#1a2535;border-radius:2px; }
+    .sev-fill  { height:100%;border-radius:2px;transition:width .4s; }
+
+    #footer { display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #1a2535;font-size:9px;color:#3d5068;letter-spacing:1px; }
+
+    .hdr-btn { border-radius:5px;padding:5px 14px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;letter-spacing:1px;border:1px solid; }
+    input.ids-input { width:100%;background:#070b0f;border:1px solid #1a2535;color:#c9d8e8;padding:7px 10px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:11px;outline:none; }
+    input.ids-input:focus { border-color:#00ff8866; }
+
+    /* ── Log Console ── */
+    #log-modal { display:none;position:fixed;inset:0;background:#000d;z-index:998;align-items:flex-end;justify-content:center;padding-bottom:0; }
+    #log-panel {
+      width:100%;max-width:100%;height:340px;background:#060a0f;
+      border-top:1px solid #1a2535;display:flex;flex-direction:column;
+      animation:slideUp .25s ease;
+    }
+    @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+    #log-header { display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-bottom:1px solid #1a2535;background:#090e15; }
+    #log-body { flex:1;overflow-y:auto;padding:10px 18px;font-size:10px;line-height:1.7;font-family:'Share Tech Mono',monospace; }
+    #log-body::-webkit-scrollbar { width:3px; }
+    #log-body::-webkit-scrollbar-thumb { background:#1a2535; }
+    .log-line { margin-bottom:1px; }
+    .log-line.info  { color:#38bdf8; }
+    .log-line.ok    { color:#00ff88; }
+    .log-line.warn  { color:#f5c400; }
+    .log-line.err   { color:#ff3b3b; }
+    .log-line.plain { color:#5a7080; }
+    #log-cursor { display:inline-block;width:7px;height:12px;background:#00ff88;animation:blink .7s infinite;vertical-align:middle;margin-left:2px; }
+
+    /* ── Start btn states ── */
+    #start-btn { transition:all .2s; }
+    #start-btn.running  { background:#0a1a0a;border-color:#00ff88;color:#00ff88; }
+    #start-btn.starting { background:#1a1500;border-color:#f5c400;color:#f5c400; }
+    #start-btn.stopped  { background:#1a0505;border-color:#ff6b6b;color:#ff6b6b; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div style="display:flex;align-items:center;gap:14px">
+    <div class="logo-box">🛡️</div>
+    <div>
+      <div class="logo-title">SMART IDS</div>
+      <div class="logo-sub">INTRUSION DETECTION SYSTEM v1.0</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span id="status-dot"></span>
+      <span id="status-txt" style="font-size:10px;color:#00ff88">MONITORING ACTIVE</span>
+    </div>
+    <button id="start-btn" class="hdr-btn stopped" onclick="startBackend()" style="background:#1a0505;border-color:#ff6b6b;color:#ff6b6b">⚡ START BACKEND</button>
+    <button id="toggle-btn" class="hdr-btn" style="background:#1a0a0a;border-color:#ff3b3b;color:#ff3b3b" onclick="toggleMonitor()">⏸ PAUSE</button>
+    <button onclick="window.open('http://localhost:8000/report','_blank')" class="hdr-btn" style="background:#001e2a;border-color:#38bdf8;color:#38bdf8">📄 REPORT</button>
+    <button onclick="document.getElementById('email-modal').style.display='flex'" class="hdr-btn" style="background:#001a1a;border-color:#00ff88;color:#00ff88">✉ ALERTS</button>
+    <div id="clock" style="font-size:10px;color:#4a6070"></div>
+  </div>
+</div>
+
+<!-- Email Config Modal -->
+<div id="email-modal" style="display:none;position:fixed;inset:0;background:#000c;z-index:999;align-items:center;justify-content:center">
+  <div style="background:#0c1219;border:1px solid #1a2535;border-radius:12px;padding:28px;width:430px;font-family:'Share Tech Mono',monospace">
+    <div style="font-family:'Orbitron',sans-serif;color:#00ff88;font-size:13px;letter-spacing:3px;margin-bottom:6px">✉ EMAIL ALERTS</div>
+    <div style="font-size:9px;color:#4a6070;margin-bottom:18px;line-height:1.8">
+      Requires a Gmail <b style="color:#c9d8e8">App Password</b> (not your login password):<br>
+      1. Go to <b style="color:#c9d8e8">myaccount.google.com → Security</b><br>
+      2. Enable <b style="color:#c9d8e8">2-Step Verification</b><br>
+      3. Search <b style="color:#c9d8e8">"App passwords"</b> → Select Mail → Generate<br>
+      4. Copy the <b style="color:#c9d8e8">16-character password</b> and paste below
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <div style="font-size:9px;color:#4a6070;margin-bottom:4px;letter-spacing:1px">YOUR GMAIL ADDRESS (sender)</div>
+        <input id="em-sender" class="ids-input" type="email" placeholder="you@gmail.com"/>
+      </div>
+      <div>
+        <div style="font-size:9px;color:#4a6070;margin-bottom:4px;letter-spacing:1px">APP PASSWORD (16 chars — not your Gmail password)</div>
+        <input id="em-pass" class="ids-input" type="password" placeholder="xxxx xxxx xxxx xxxx"/>
+      </div>
+      <div>
+        <div style="font-size:9px;color:#4a6070;margin-bottom:4px;letter-spacing:1px">ALERT RECIPIENT (where to receive alerts — can be same as above)</div>
+        <input id="em-recv" class="ids-input" type="email" placeholder="you@gmail.com"/>
+      </div>
+    </div>
+    <div id="em-status" style="font-size:9px;margin-top:10px;min-height:16px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="saveEmailConfig()" style="flex:1;background:#0a1a0a;border:1px solid #00ff88;color:#00ff88;border-radius:5px;padding:8px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;letter-spacing:1px">💾 SAVE &amp; ENABLE</button>
+      <button onclick="document.getElementById('email-modal').style.display='none'" style="background:#1a0a0a;border:1px solid #ff3b3b;color:#ff3b3b;border-radius:5px;padding:8px 16px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer">✕ CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Console Panel -->
+<div id="log-modal" onclick="e=>{ if(e.target===this) closeLog(); }">
+  <div id="log-panel">
+    <div id="log-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Orbitron',sans-serif;font-size:11px;color:#00ff88;letter-spacing:2px">⚡ BACKEND CONSOLE</span>
+        <span id="log-status-badge" style="font-size:9px;padding:2px 8px;border-radius:3px;background:#1a1500;color:#f5c400;border:1px solid #f5c40044">STARTING...</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="clearLog()" style="background:transparent;border:1px solid #1a2535;color:#4a6070;border-radius:4px;padding:3px 10px;font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer">CLEAR</button>
+        <button onclick="closeLog()" style="background:#1a0a0a;border:1px solid #ff3b3b;color:#ff3b3b;border-radius:4px;padding:3px 10px;font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer">✕ HIDE</button>
+      </div>
+    </div>
+    <div id="log-body"><span id="log-cursor"></span></div>
+  </div>
+</div>
+
+<div id="main">
+
+  <!-- Offline Banner -->
+  <div id="offline-banner" style="display:none;background:#2a0a0a;border:1px solid #ff3b3b;border-radius:8px;padding:12px 20px;font-size:11px;color:#ff3b3b;align-items:center;justify-content:space-between">
+    <span>⚠ Backend offline — click <b style="color:#f5c400">⚡ START BACKEND</b> in the header to launch the server automatically</span>
+    <button onclick="startBackend()" style="background:#1a0a0a;border:1px solid #ff3b3b;color:#ff3b3b;border-radius:4px;padding:4px 10px;font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer;margin-left:12px">⚡ START NOW</button>
+  </div>
+
+  <!-- STAT CARDS -->
+  <div id="stats">
+    <div class="stat-card" style="border:1px solid #38bdf833;box-shadow:0 0 18px #38bdf818">
+      <div class="stat-label">Total Events</div>
+      <div class="stat-value" style="color:#38bdf8"><span class="pulse-dot" style="background:#38bdf8"></span><span id="s-total">0</span></div>
+      <div class="stat-sub">This session</div>
+    </div>
+    <div class="stat-card" style="border:1px solid #ff3b3b33;box-shadow:0 0 18px #ff3b3b18">
+      <div class="stat-label">Critical Threats</div>
+      <div class="stat-value" style="color:#ff3b3b"><span class="pulse-dot" style="background:#ff3b3b"></span><span id="s-crit">0</span></div>
+      <div class="stat-sub">Immediate action required</div>
+    </div>
+    <div class="stat-card" style="border:1px solid #ff8c0033;box-shadow:0 0 18px #ff8c0018">
+      <div class="stat-label">High Severity</div>
+      <div class="stat-value" style="color:#ff8c00"><span id="s-high">0</span></div>
+      <div class="stat-sub">Email alerts sent</div>
+    </div>
+    <div class="stat-card" style="border:1px solid #00ff8833;box-shadow:0 0 18px #00ff8818">
+      <div class="stat-label">IPs Blocked</div>
+      <div class="stat-value" style="color:#00ff88"><span id="s-blocked">0</span></div>
+      <div class="stat-sub">Auto-blocked via iptables</div>
+    </div>
+    <div class="stat-card" style="border:1px solid #f5c40033;box-shadow:0 0 18px #f5c40018">
+      <div class="stat-label">Packet Rate</div>
+      <div class="stat-value" style="color:#f5c400"><span id="s-pkt">0</span></div>
+      <div class="stat-sub">Packets inspected/sec</div>
+    </div>
+  </div>
+
+  <!-- MAP + TIMELINE -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">🗺 Live Attack Map</div>
+      <div id="leaflet-map" style="height:260px;border-radius:8px;border:1px solid #1a2535;overflow:hidden"></div>
+      <div id="country-legend" style="font-size:9px;color:#4a6070;font-family:'Share Tech Mono',monospace;margin-top:6px;line-height:1.6"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📈 Attack Timeline</div>
+      <canvas id="tl-canvas" height="215" style="width:100%;height:215px"></canvas>
+    </div>
+  </div>
+
+  <!-- FEED + DIST -->
+  <div class="grid-2b">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="panel-title" style="margin-bottom:0">📡 Live Intrusion Feed</div>
+        <div class="filters" id="filter-btns">
+          <button class="filter-btn" onclick="setFilter('All',this)" style="background:#1a2535;color:#c9d8e8;border-color:#3d5068">ALL</button>
+          <button class="filter-btn" onclick="setFilter('Critical',this)">CRITICAL</button>
+          <button class="filter-btn" onclick="setFilter('High',this)">HIGH</button>
+          <button class="filter-btn" onclick="setFilter('Medium',this)">MEDIUM</button>
+          <button class="filter-btn" onclick="setFilter('Low',this)">LOW</button>
+        </div>
+      </div>
+      <div class="feed-header">
+        <span>Time</span><span>Source IP</span><span>Attack · Port</span><span>Severity</span><span>Score</span><span>Status</span>
+      </div>
+      <div id="feed-wrap"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📊 Attack Distribution</div>
+      <canvas id="dist-canvas" height="175" style="width:100%;height:175px"></canvas>
+      <div id="sev-bars" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- BLOCKED -->
+  <div class="panel" style="border-color:#ff3b3b33;box-shadow:0 0 20px #ff3b3b10">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="panel-title" style="margin-bottom:0">🚫 Auto-Blocked IPs &nbsp;<span id="blocked-count" style="color:#ff3b3b;font-size:13px">[0]</span></div>
+      <div style="font-size:9px;color:#4a6070;letter-spacing:1px">IPTABLES FIREWALL · AUTO-EXPIRE: 24H</div>
+    </div>
+    <div class="blocked-header"><span>IP Address</span><span>Attack</span><span>Severity</span><span>Time</span></div>
+    <div id="blocked-wrap"></div>
+  </div>
+
+  <div id="footer">
+    <span>SMART IDS v1.0 · RULE-BASED DETECTION ENGINE</span>
+    <span>STACK: PYTHON · SCAPY · FASTAPI · REACT</span>
+    <span style="color:#00ff88"><span style="animation:pulse 1s infinite;display:inline-block">●</span> <span id="live-lbl">LIVE</span></span>
+  </div>
+</div>
+
+<script>
+const API     = "http://localhost:8000";
+const SEV_COL = {Critical:"#ff3b3b",High:"#ff8c00",Medium:"#f5c400",Low:"#38bdf8"};
+const SEV_BG  = {Critical:"#2a0a0a",High:"#221500",Medium:"#1e1a00",Low:"#001e2a"};
+const ATTACKS = ["Brute Force","Port Scan","ICMP Flood","Unusual Login","Repeat Offender"];
+
+let events=[], running=true, filterSev="All", tlData=[], distData=[];
+let backendRunning=false, logEventSource=null;
+
+// ── Backend Launcher ──────────────────────────────────────────────────────────
+function startBackend(){
+  const btn=document.getElementById('start-btn');
+  if(backendRunning){ openLog(); return; }
+
+  btn.className='hdr-btn starting';
+  btn.textContent='⏳ STARTING...';
+  openLog();
+  appendLog('info','[IDS] Requesting backend start via /start-server...');
+
+  fetch(`${API}/start-server`, {method:'POST'})
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(d=>{
+      appendLog('ok','[IDS] '+d.message);
+      streamLogs();
+    })
+    .catch(()=>{
+      // Backend not yet running — try to open via OS launcher as fallback
+      appendLog('warn','[IDS] Backend not reachable. Attempting OS-level launch...');
+      appendLog('plain','[IDS] On Windows: double-click start.bat in your project folder');
+      appendLog('plain','[IDS] On Mac/Linux: run bash start.sh in your project folder');
+      appendLog('plain','[IDS] Then click START BACKEND again once the server is up.');
+      btn.className='hdr-btn stopped';
+      btn.textContent='⚡ START BACKEND';
+      // Poll until it comes up
+      pollUntilUp();
+    });
+}
+
+function pollUntilUp(){
+  const interval=setInterval(async()=>{
+    try{
+      await fetch(`${API}/stats`);
+      clearInterval(interval);
+      onBackendUp();
+    } catch(e){}
+  },1500);
+}
+
+function streamLogs(){
+  if(logEventSource) logEventSource.close();
+  try{
+    logEventSource=new EventSource(`${API}/logs`);
+    logEventSource.onmessage=e=>{
+      const line=e.data;
+      const type=line.includes('ERROR')||line.includes('error')?'err':
+                 line.includes('WARNING')||line.includes('warn')?'warn':
+                 line.includes('started')||line.includes('Uvicorn')||line.includes('Application')?'ok':'plain';
+      appendLog(type, line);
+    };
+    logEventSource.onerror=()=>{
+      appendLog('warn','[IDS] Log stream disconnected.');
+    };
+  } catch(e){}
+}
+
+function onBackendUp(){
+  backendRunning=true;
+  const btn=document.getElementById('start-btn');
+  btn.className='hdr-btn running';
+  btn.textContent='✅ BACKEND RUNNING';
+  btn.title='Click to view logs';
+  document.getElementById('offline-banner').style.display='none';
+  document.getElementById('log-status-badge').style.background='#001a0a';
+  document.getElementById('log-status-badge').style.color='#00ff88';
+  document.getElementById('log-status-badge').style.borderColor='#00ff8844';
+  document.getElementById('log-status-badge').textContent='RUNNING';
+  appendLog('ok','[IDS] ✓ Backend online — monitoring active at http://localhost:8000');
+  fetchData();
+}
+
+// ── Log Console ───────────────────────────────────────────────────────────────
+function openLog(){
+  document.getElementById('log-modal').style.display='flex';
+}
+function closeLog(){
+  document.getElementById('log-modal').style.display='none';
+}
+function clearLog(){
+  document.getElementById('log-body').innerHTML='<span id="log-cursor"></span>';
+}
+function appendLog(type, text){
+  const body=document.getElementById('log-body');
+  const cursor=document.getElementById('log-cursor');
+  const div=document.createElement('div');
+  div.className='log-line '+type;
+  div.textContent=text;
+  body.insertBefore(div, cursor);
+  body.scrollTop=body.scrollHeight;
+}
+
+// ── Data Fetching ─────────────────────────────────────────────────────────────
+function buildTL(evs){
+  if(evs.length===0) return [{t:"--",Critical:0,High:0,Medium:0,Low:0},{t:"--",Critical:0,High:0,Medium:0,Low:0}];
+  const reversed=[...evs].reverse();
+  const size=Math.max(1,Math.ceil(reversed.length/10));
+  const buckets=[];
+  for(let i=0;i<Math.min(10,Math.ceil(reversed.length/size));i++){
+    const chunk=reversed.slice(i*size,(i+1)*size);
+    const b={t:chunk[0]?.time?.substring(0,5)||"--",Critical:0,High:0,Medium:0,Low:0};
+    chunk.forEach(e=>{ if(b[e.severity]!==undefined) b[e.severity]++; });
+    buckets.push(b);
+  }
+  return buckets.length>1?buckets:[...buckets,{t:"--",Critical:0,High:0,Medium:0,Low:0}];
+}
+function buildDist(evs){
+  return ATTACKS.map(a=>({name:a,count:evs.filter(e=>e.attack===a).length}));
+}
+
+async function fetchData(){
+  if(!running) return;
+  try{
+    const [evRes,stRes]=await Promise.all([fetch(`${API}/events`),fetch(`${API}/stats`)]);
+    events=await evRes.json();
+    const st=await stRes.json();
+    document.getElementById('s-pkt').textContent=st.packet_rate+" pkts";
+    document.getElementById('offline-banner').style.display='none';
+    if(!backendRunning) onBackendUp();
+    tlData=buildTL(events); distData=buildDist(events);
+    render();
+  } catch(err){
+    document.getElementById('status-txt').textContent="BACKEND OFFLINE";
+    document.getElementById('status-dot').style.background="#ff3b3b";
+    document.getElementById('status-dot').style.animation="none";
+    document.getElementById('offline-banner').style.display='flex';
+    if(backendRunning){
+      backendRunning=false;
+      const btn=document.getElementById('start-btn');
+      btn.className='hdr-btn stopped';
+      btn.textContent='⚡ START BACKEND';
+    }
+  }
+}
+
+fetchData();
+setInterval(fetchData,2000);
+setInterval(()=>{ document.getElementById('clock').textContent=new Date().toLocaleTimeString(); },1000);
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+function toggleMonitor(){
+  running=!running;
+  const btn=document.getElementById('toggle-btn');
+  const dot=document.getElementById('status-dot');
+  const txt=document.getElementById('status-txt');
+  if(running){
+    btn.textContent="⏸ PAUSE"; btn.classList.remove('paused');
+    dot.style.background="#00ff88"; dot.style.animation="pulse 1s infinite";
+    txt.style.color="#00ff88"; txt.textContent="MONITORING ACTIVE";
+    document.getElementById('live-lbl').textContent="LIVE";
+  } else {
+    btn.textContent="▶ RESUME"; btn.classList.add('paused');
+    dot.style.background="#ff3b3b"; dot.style.animation="none";
+    txt.style.color="#ff3b3b"; txt.textContent="MONITORING PAUSED";
+    document.getElementById('live-lbl').textContent="PAUSED";
+  }
+}
+
+function setFilter(f,el){
+  filterSev=f;
+  document.querySelectorAll('.filter-btn').forEach(b=>{
+    b.style.background="transparent"; b.style.color="#4a6070"; b.style.borderColor="#1a2535";
+  });
+  const col=SEV_COL[f]||"#c9d8e8";
+  const bg=SEV_BG[f]||"#1a2535";
+  el.style.background=bg; el.style.color=col; el.style.borderColor=col;
+  renderFeed();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render(){
+  const total=events.length,critical=events.filter(e=>e.severity==="Critical").length,
+        high=events.filter(e=>e.severity==="High").length,blocked=events.filter(e=>e.blocked).length;
+  document.getElementById('s-total').textContent=total;
+  document.getElementById('s-crit').textContent=critical;
+  document.getElementById('s-high').textContent=high;
+  document.getElementById('s-blocked').textContent=blocked;
+  document.getElementById('blocked-count').textContent=`[${blocked}]`;
+  renderFeed(); renderBlocked(); renderMap(); renderTL(); renderDist(); renderSevBars();
+}
+
+function renderFeed(){
+  const list=(filterSev==="All"?events:events.filter(e=>e.severity===filterSev)).slice(0,50);
+  document.getElementById('feed-wrap').innerHTML=list.map((e,i)=>{
+    const col=SEV_COL[e.severity],bg=SEV_BG[e.severity];
+    return `<div class="feed-row${i===0?' new':''}${i%2===1?' alt':''}">
+      <span style="color:#4a6070">${e.time}</span>
+      <span style="color:#00ff88">${e.ip}</span>
+      <span style="color:#c9d8e8">${e.attack}<span style="color:#4a6070"> :${e.port}</span></span>
+      <span class="badge" style="color:${col};background:${bg};border-color:${col}88">${e.severity.toUpperCase()}</span>
+      <div class="score-wrap">
+        <div class="score-track"><div class="score-fill" style="width:${e.score}%;background:${col}"></div></div>
+        <span style="font-size:10px;color:${col}">${e.score}</span>
+      </div>
+      <span style="color:${e.blocked?'#ff3b3b':'#00ff88'};font-size:10px;letter-spacing:1px">${e.blocked?"🚫 BLOCKED":"✓ LOGGED"}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderBlocked(){
+  const bl=events.filter(e=>e.blocked).slice(0,8);
+  document.getElementById('blocked-wrap').innerHTML=bl.map((e,i)=>{
+    const col=SEV_COL[e.severity],bg=SEV_BG[e.severity];
+    return `<div class="blocked-row${i%2===1?' alt':''}">
+      <span style="color:#ff3b3b">${e.ip}</span>
+      <span style="color:#c9d8e8">${e.attack}</span>
+      <span class="badge" style="color:${col};background:${bg};border-color:${col}88">${e.severity.toUpperCase()}</span>
+      <span style="color:#4a6070">${e.time}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+let leafletMap=null,leafletMarkers={};
+function initMap(){
+  leafletMap=L.map('leaflet-map',{center:[20,0],zoom:2,zoomControl:false,attributionControl:false});
+  // White land + blue sea, no tiles, no labels, no API key: country shapes are drawn from a public GeoJSON file.
+  const el=document.getElementById('leaflet-map'); el.style.background='#bfdbfe'; el.style.borderColor='#3b82f6';
+  fetch('https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json')
+    .then(r=>r.json())
+    .then(g=>L.geoJSON(g,{filter:f=>f.id!=='ATA',style:{fillColor:'#ffffff',fillOpacity:1,color:'#2563eb',weight:0.6}}).addTo(leafletMap))
+    .catch(()=>{});
+}
+function ipToFallbackLatLon(ip){
+  let h=0; for(let i=0;i<ip.length;i++) h=(h*31+ip.charCodeAt(i))>>>0;
+  const f=[[55.75,37.6],[39.9,116.4],[51.5,-0.1],[48.8,2.3],[35.6,139.7],[40.7,-74.0],[1.3,103.8],[55.6,13.0],[-33.8,151.2],[19.4,-99.1]];
+  return f[h%f.length];
+}
+function renderMap(){
+  if(!leafletMap) return;
+  const seen={},drawn=[];
+  events.slice(0,20).forEach(e=>{ if(!seen[e.ip]){ seen[e.ip]=true; drawn.push(e); } });
+  const currentIPs=new Set(drawn.map(e=>e.ip));
+  Object.keys(leafletMarkers).forEach(ip=>{ if(!currentIPs.has(ip)){ leafletMarkers[ip].remove(); delete leafletMarkers[ip]; } });
+  drawn.forEach(e=>{
+    if(!e.lat&&!e.lon) return;   // no known location: do not invent one
+    const lat=e.lat,lon=e.lon;
+    const col=SEV_COL[e.severity];
+    if(leafletMarkers[e.ip]) return;
+    const icon=L.divIcon({className:'',html:`<div style="width:10px;height:10px;border-radius:50%;background:${col};box-shadow:0 0 8px ${col};border:1px solid ${col}99;animation:pulse 1.5s infinite"></div>`,iconSize:[10,10],iconAnchor:[5,5]});
+    leafletMarkers[e.ip]=L.marker([lat,lon],{icon})
+      .bindTooltip(`<b style="color:${col}">${e.severity}</b><br>${e.attack}<br>${e.ip}<br>${e.country||'Unknown'}`,{className:'ids-tooltip',permanent:false,direction:'top'})
+      .addTo(leafletMap);
+  });
+  const countries=[...new Set(drawn.map(e=>e.country).filter(c=>c&&c!=="Unknown"))];
+  document.getElementById('country-legend').innerHTML=countries.length?"SOURCES: "+countries.map(c=>`<span style="color:#c9d8e8">${c}</span>`).join(' · '):"";
+}
+initMap();
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+function renderTL(){
+  const canvas=document.getElementById('tl-canvas');
+  canvas.width=canvas.offsetWidth||420;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  const pad={l:32,r:10,t:10,b:38};
+  const cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0c1219'; ctx.fillRect(0,0,W,H);
+  const keys=['Critical','High','Medium','Low'];
+  const cols=['#ff3b3b','#ff8c00','#f5c400','#38bdf8'];
+  const maxV=Math.max(...tlData.flatMap(d=>keys.map(k=>d[k])),1);
+  const n=tlData.length;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+(cH/4)*i;
+    ctx.strokeStyle='#1a2535'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(pad.l+cW,y); ctx.stroke();
+    ctx.fillStyle='#4a6070'; ctx.font='9px Share Tech Mono'; ctx.textAlign='right';
+    ctx.fillText(Math.round(maxV-(maxV/4)*i),pad.l-4,y+3);
+  }
+  keys.forEach((k,ki)=>{
+    const col=cols[ki];
+    ctx.beginPath();
+    tlData.forEach((d,i)=>{ const x=pad.l+(i/(n-1))*cW,y=pad.t+cH-(d[k]/maxV)*cH; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.lineTo(pad.l+cW,pad.t+cH); ctx.lineTo(pad.l,pad.t+cH); ctx.closePath();
+    ctx.fillStyle=col+'22'; ctx.fill();
+    ctx.beginPath();
+    tlData.forEach((d,i)=>{ const x=pad.l+(i/(n-1))*cW,y=pad.t+cH-(d[k]/maxV)*cH; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.stroke();
+  });
+  ctx.fillStyle='#4a6070'; ctx.font='9px Share Tech Mono'; ctx.textAlign='center';
+  tlData.forEach((d,i)=>{ if(i%2===0) ctx.fillText(d.t,pad.l+(i/(n-1))*cW,H-20); });
+  keys.forEach((k,i)=>{
+    const x=pad.l+i*88;
+    ctx.fillStyle=cols[i]; ctx.fillRect(x,H-13,10,3);
+    ctx.fillStyle='#4a6070'; ctx.font='8px Share Tech Mono'; ctx.textAlign='left';
+    ctx.fillText(k,x+13,H-8);
+  });
+}
+
+function renderDist(){
+  const canvas=document.getElementById('dist-canvas');
+  canvas.width=canvas.offsetWidth||300;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  const pad={l:105,r:30,t:8,b:8};
+  const cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0c1219'; ctx.fillRect(0,0,W,H);
+  const maxV=Math.max(...distData.map(d=>d.count),1);
+  const bH=Math.floor(cH/distData.length)-6;
+  distData.forEach((d,i)=>{
+    const y=pad.t+i*(bH+6),bw=(d.count/maxV)*cW;
+    ctx.fillStyle='#c9d8e8'; ctx.font='10px Share Tech Mono'; ctx.textAlign='right';
+    ctx.fillText(d.name,pad.l-6,y+bH-3);
+    ctx.fillStyle='#1a2535'; ctx.fillRect(pad.l,y,cW,bH);
+    ctx.fillStyle='#00ff88cc'; ctx.fillRect(pad.l,y,bw,bH);
+    ctx.fillStyle='#00ff88'; ctx.font='9px Share Tech Mono'; ctx.textAlign='left';
+    ctx.fillText(d.count,pad.l+bw+4,y+bH-3);
+  });
+}
+
+function renderSevBars(){
+  const total=events.length||1;
+  document.getElementById('sev-bars').innerHTML=['Critical','High','Medium','Low'].map(k=>{
+    const cnt=events.filter(e=>e.severity===k).length;
+    const pct=(cnt/total*100).toFixed(0);
+    const col=SEV_COL[k];
+    return `<div class="sev-row">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:8px;height:8px;border-radius:50%;background:${col}"></div>
+        <span style="font-size:10px;color:#4a6070">${k}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="sev-track"><div class="sev-fill" style="width:${pct}%;background:${col}"></div></div>
+        <span style="font-size:10px;color:${col};min-width:24px;text-align:right">${cnt}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Email Config ──────────────────────────────────────────────────────────────
+async function saveEmailConfig(){
+  const sender=document.getElementById('em-sender').value.trim();
+  const pass=document.getElementById('em-pass').value.trim();
+  const recv=document.getElementById('em-recv').value.trim();
+  const st=document.getElementById('em-status');
+  if(!sender||!pass||!recv){ st.style.color='#ff3b3b'; st.textContent='⚠ All fields required.'; return; }
+  st.style.color='#f5c400'; st.textContent='Saving...';
+  try{
+    const res=await fetch(`${API}/email-config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sender,password:pass,receiver:recv})});
+    if(res.ok){
+      st.style.color='#00ff88'; st.textContent='✓ Alerts enabled!';
+      setTimeout(()=>{ document.getElementById('email-modal').style.display='none'; st.textContent=''; },900);
+    } else { st.style.color='#ff3b3b'; st.textContent='✗ Server error.'; }
+  } catch(e){ st.style.color='#ff3b3b'; st.textContent='✗ Backend offline — start the server first.'; }
+}
+
+fetch(`${API}/email-config`).then(r=>r.json()).then(cfg=>{
+  if(cfg.sender) document.getElementById('em-sender').value=cfg.sender;
+  if(cfg.receiver) document.getElementById('em-recv').value=cfg.receiver;
+}).catch(()=>{});
+</script>
+</body>
+</html>
