@@ -45,14 +45,17 @@ source-windows). Attacks include slow and weak variants and a SYN flood that no 
 
 Full per-attack breakdown: `results.md`.
 
-## Limitations (read this)
-- **The evaluation data is synthetic.** It shows the detectors work on the traffic shapes defined in
-  `traffic_sim.py`. It does not prove real-world accuracy. Next step: evaluate on a public labeled dataset
-  such as CIC-IDS2017.
-- The model is trained on synthetic normal traffic. For real use, train it on your own network's normal traffic.
-- Rules miss slow attacks (for example SSH guesses slower than 6 per minute) by design.
-- Live capture has been unit-tested (packet conversion) but not run against a real network in development.
-- IPv4 only. No payload inspection, so DNS tunneling and C2 beaconing are not detected.
+## Scope and next steps
+
+**Evaluation.** Results above are measured on synthetic labeled traffic, so they show how the detectors
+behave on known attack shapes, not real-world accuracy. Next: evaluate on CIC-IDS2017.
+
+**Detection coverage.** Three rules (SSH brute force, port scan, ICMP flood) plus an Isolation Forest for
+unseen patterns. Slow attacks below the rule thresholds are handled by the model or missed; both are
+visible in results.md. Payload-level attacks (DNS tunneling, C2 beaconing) are out of scope for now.
+
+**Deployment.** Live capture is implemented and its packet parsing is unit-tested; the model is trained
+on synthetic normal traffic and should be retrained on the target network's own traffic.
 
 ## Layout
 `packets.py` packet record · `detector.py` rules · `ml.py` Isolation Forest · `netcapture.py` Scapy adapter ·
