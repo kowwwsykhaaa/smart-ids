@@ -1,59 +1,89 @@
 # Smart IDS
 
-A small network intrusion detection system in Python. It watches packets, flags suspicious behaviour with
-**rules** and an **Isolation Forest** model, shows alerts on a web dashboard, and can (optionally) block
-attackers with firewall rules.
+![tests](https://github.com/kowwwsykhaaa/smart-ids/actions/workflows/tests.yml/badge.svg)
+![python](https://img.shields.io/badge/python-3.12+-blue)
+![license](https://img.shields.io/badge/license-MIT-blue)
 
-## What it detects
+A network intrusion detection system in Python. It watches packets, flags suspicious behaviour with
+**explainable rules** and an **Isolation Forest** anomaly model, shows alerts on a live web dashboard,
+and can optionally block attackers with firewall rules.
 
-| Detector | What it looks for |
-|---|---|
-| Rule: SSH Brute Force | 6+ SYN packets to port 22 from one IP within 60 s |
-| Rule: Port Scan | SYNs to 15+ different ports from one IP within 30 s |
-| Rule: ICMP Flood | 100+ ICMP packets from one IP within 10 s |
-| Isolation Forest | Any 10-second window of one IP's traffic that looks unlike normal traffic (8 features: packets, SYNs, distinct ports/hosts, ICMP/UDP counts, mean size, SYN ratio) |
+![Dashboard](screenshot.png)
 
-## Run it
+## How it works
 
-```bash
-pip install -r smart_ids/requirements.txt   # run all commands from the folder that CONTAINS smart_ids/
-python -m smart_ids.run                      # safe replay demo, no admin needed
-python -m smart_ids.run --mode live          # real capture (admin + Npcap on Windows, root on Linux)
-python -m smart_ids.run --mode live --enforce   # also adds real firewall block rules
-python -m smart_ids.evaluate                 # re-measure detectors, rewrites results.md
-python -m pytest smart_ids/tests             # 13 tests
+```
+packets -> Pkt records -+-> RuleDetector -------------+
+                        |                             +-> alerts -> dashboard / PDF report
+                        +-> Isolation Forest windows -+        \-> firewall block (opt-in)
 ```
 
-Replay mode feeds recorded **synthetic** traffic through the real detection code. Nothing touches the network.
+| Detector | Fires when |
+|---|---|
+| Rule: SSH Brute Force | one IP sends 6+ SYNs to port 22 within 60 s |
+| Rule: Port Scan | one IP sends SYNs to 15+ different ports within 30 s |
+| Rule: ICMP Flood | one IP sends 100+ ICMP packets within 10 s |
+| Isolation Forest | a 10-second window of one IP's traffic looks unlike normal traffic (8 features: packets, SYNs, distinct ports and hosts, ICMP and UDP counts, mean size, SYN ratio) |
 
-## Safety
-- Blocking is **dry-run by default**. `--enforce` is required to add firewall rules.
-- Only public IPs can be blocked, never private, loopback or documentation ranges.
-- IPs are validated and passed to the firewall command as arguments (no shell).
-- The server listens on 127.0.0.1 only.
+Detection logic never touches Scapy directly, so it is unit-tested and evaluated on recorded traffic.
 
-## Results (synthetic traffic)
+## Results
 
-Measured by `evaluate.py` on generated labeled traffic (317k packets, 80 attack episodes, 4,970 benign
-source-windows). Attacks include slow and weak variants and a SYN flood that no rule covers.
+Measured by `evaluate.py` on generated, labeled **synthetic** traffic: 317k packets, 80 attack episodes,
+4,970 benign source-windows. Attacks include slow and weak variants plus a SYN flood that no rule covers.
 
-| Detector | Episode recall | Alert precision | F1 | False alarms |
+| Detector | Attacks caught | Precision | F1 | False alarms |
 |---|---|---|---|---|
 | Rules only | 56% | 100% | 0.72 | 0 |
 | Isolation Forest only | 71% | 91% | 0.80 | 24 |
 | Rules + Isolation Forest | 91% | 93% | 0.92 | 24 |
 
-Full per-attack breakdown: `results.md`.
+The rules caught none of the SYN floods; the Isolation Forest caught all of them. Per-attack breakdown: `smart_ids/results.md`.
 
-## Limitations (read this)
-- **The evaluation data is synthetic.** It shows the detectors work on the traffic shapes defined in
-  `traffic_sim.py`. It does not prove real-world accuracy. Next step: evaluate on a public labeled dataset
-  such as CIC-IDS2017.
-- The model is trained on synthetic normal traffic. For real use, train it on your own network's normal traffic.
-- Rules miss slow attacks (for example SSH guesses slower than 6 per minute) by design.
-- Live capture has been unit-tested (packet conversion) but not run against a real network in development.
-- IPv4 only. No payload inspection, so DNS tunneling and C2 beaconing are not detected.
+## Quick start
 
-## Layout
-`packets.py` packet record · `detector.py` rules · `ml.py` Isolation Forest · `netcapture.py` Scapy adapter ·
-`responder.py` safe blocking · `server.py` API · `traffic_sim.py` + `evaluate.py` testing · `dashboard.html` UI
+```bash
+pip install -r smart_ids/requirements.txt
+python -m smart_ids.run                          # replay demo: synthetic traffic, no admin needed
+python -m smart_ids.run --mode live              # real capture (admin + Npcap on Windows, root on Linux)
+python -m smart_ids.run --mode live --enforce    # also add real firewall block rules
+python -m smart_ids.evaluate                     # re-measure the detectors
+python -m pytest smart_ids/tests                 # 13 tests
+```
+
+Run all commands from the folder that contains `smart_ids/`.
+
+## Safety by design
+
+- Blocking is **dry-run by default**; `--enforce` is required to add firewall rules.
+- Only public IPs can be blocked, never private, loopback or documentation ranges.
+- IPs are validated and passed to the firewall as arguments (no shell).
+- The server listens on 127.0.0.1 only.
+
+## Scope and next steps
+
+**Evaluation.** Results are measured on synthetic traffic, so they show behaviour on known attack shapes,
+not real-world accuracy. Next: evaluate on CIC-IDS2017.
+
+**Detection coverage.** Three rules plus an Isolation Forest for unseen patterns. Payload-level attacks
+(DNS tunneling, C2 beaconing) are out of scope for now.
+
+**Deployment.** Live capture is implemented and its packet parsing is unit-tested. The model is trained
+on synthetic normal traffic and should be retrained on the target network's own traffic.
+
+## Project layout
+
+| File | Purpose |
+|---|---|
+| `packets.py` | packet record shared by all components |
+| `detector.py` | rule-based detection with time windows and cooldowns |
+| `ml.py` | Isolation Forest features, training, streaming scoring |
+| `netcapture.py` | Scapy adapter for live capture |
+| `responder.py` | safe firewall blocking |
+| `server.py` | FastAPI backend and PDF report |
+| `traffic_sim.py`, `evaluate.py` | synthetic labeled traffic and measurement |
+| `dashboard.html` | web UI |
+
+## License
+
+MIT
